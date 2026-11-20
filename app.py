@@ -2,8 +2,8 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
-# If Google renames or retires this model, change it here.
-MODEL = "gemini-3.8-flash"
+# Tried in order. If Google renames or retires a model, edit this list.
+MODELS = ["gemini-3.8-flash", "gemini-flash-latest"]
 SYSTEM = (
     "You are a helpful, friendly AI assistant. Answer clearly and concisely. "
     "If the user writes in Telugu or Tenglish, reply in the same style."
@@ -21,10 +21,37 @@ if not api_key:
 
 @st.cache_resource
 def get_client(key):
-    return genai.Client(api_key=key)
+    # timeout is in milliseconds
+    return genai.Client(api_key=key, http_options=types.HttpOptions(timeout=30000))
 
 
 client = get_client(api_key)
+
+
+def stream_reply(contents):
+    """Yield the answer piece by piece; fall back to the next model on error."""
+    errors = []
+    for model in MODELS:
+        got_text = False
+        try:
+            for chunk in client.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(system_instruction=SYSTEM),
+            ):
+                if chunk.text:
+                    got_text = True
+                    yield chunk.text
+            if got_text:
+                return
+            errors.append(f"{model}: empty response")
+        except Exception as e:
+            if got_text:
+                yield "\n\n(The answer was cut off by an error.)"
+                return
+            errors.append(f"{model}: {e}")
+    yield "Sorry, I could not get an answer.\n\n" + "\n\n".join(errors)
+
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -43,15 +70,5 @@ if prompt := st.chat_input("Ask me anything..."):
         for m in st.session_state.messages
     ]
     with st.chat_message("assistant"):
-        try:
-            with st.spinner("Thinking..."):
-                resp = client.models.generate_content(
-                    model=MODEL,
-                    contents=contents,
-                    config=types.GenerateContentConfig(system_instruction=SYSTEM),
-                )
-            reply = resp.text or "Sorry, I could not generate an answer."
-        except Exception as e:
-            reply = f"Sorry, something went wrong: {e}"
-        st.write(reply)
+        reply = st.write_stream(stream_reply(contents))
     st.session_state.messages.append({"role": "assistant", "content": reply})
