@@ -3,7 +3,7 @@ from google import genai
 from google.genai import types
 
 # If Google renames or retires this model, change it here.
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3.8-flash"
 SYSTEM = (
     "You are a helpful, friendly AI assistant. Answer clearly and concisely. "
     "If the user writes in Telugu or Tenglish, reply in the same style."
